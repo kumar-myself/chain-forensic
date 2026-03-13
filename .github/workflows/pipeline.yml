@@ -27,4 +27,4 @@ jobs:
           SOURCE_DATA_URL: ${{ secrets.SOURCE_DATA_URL }}
           OUTPUT_DATA_DIR: ${{ secrets.OUTPUT_DATA_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        run: python main.py
+        # run: python main.py
