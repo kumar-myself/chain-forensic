@@ -6,7 +6,7 @@ from io import StringIO
 
 
 def load_csv():
-    url = os.environ["DATA_URL"]
+    url = os.environ["SOURCE_DATA_URL"]
     token = os.environ["TOKEN"]
 
     headers = {
