@@ -30,7 +30,7 @@ def load_csv():
     if "content" not in res:
         raise Exception(f"GitHub API error: {res}")
 
-    content = base64.b64decode(res["content"]).decode("utf-8")
+    content = base64.b64decode(res["content"].replace("\n", "")).decode("utf-8")
 
     df = pd.read_csv(StringIO(content))
 
