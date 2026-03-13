@@ -1,4 +1,4 @@
-from data_loader import load_csv
+from source.data_loader import load_csv
 
 df = load_csv()
 
