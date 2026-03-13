@@ -3,10 +3,12 @@ import requests
 import base64
 import pandas as pd
 from io import StringIO
+from config import SOURCE_DATA_URL, TOKEN
+
 
 def load_csv():
-    url = os.environ.get("SOURCE_DATA_URL")
-    token = os.environ.get("TOKEN")
+    url = SOURCE_DATA_URL
+    token = TOKEN
 
     if not url:
         raise ValueError("SOURCE_DATA_URL not found in environment variables")
