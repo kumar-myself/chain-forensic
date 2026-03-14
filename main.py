@@ -17,6 +17,7 @@ import random
 import os
 import requests
 import base64
+from db.mongo_insert import insert_reports
 
 from config import (
     INPUT_CSV_COLUMN, INPUT_URL_FILTER,
@@ -450,7 +451,7 @@ def process_and_push_batch(batch_num: int, batch_results_data: list):
     success = push_file_to_repo(full_url, content, commit_msg)
     if success:
         print(f"✅ processed_batch-{batch_num}.json pushed ({len(batch_reports)} reports, {batch_stats['total_addresses']} addresses)")
-    return success
+    return processed_payload
                                 
 # ============================================
 # MAIN SCRAPE LOOP
@@ -536,11 +537,13 @@ async def scrape_all(all_urls):
             push_batch_to_repo(batch_num, current_index, current_index + len(batch_urls), batch_results_data)
 
             # Push processed batch — this batch only, checkpoint format
-            process_and_push_batch(batch_num, batch_results_data)
+            progress_batch = process_and_push_batch(batch_num, batch_results_data)
 
             # Update local progress.json — point to the NEXT unprocessed index
             next_index = current_index + len(batch_urls)
             last_url = batch_urls[-1] if batch_urls else ""
+
+            insert_reports(progress_batch["reports"])
             save_progress(batch_num, next_index, last_url)
 
         except Exception as e:
