@@ -25,6 +25,11 @@ jobs:
 
       - name: Run script
         env:
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+          MONGO_HOST: ${{ secrets.MONGO_HOST }}
+          MONGO_DB: ${{ secrets.MONGO_DB }}
+          MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
           BASE_DIR: ${{ secrets.BASE_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        run: python main.py
+        # run: python main.py
