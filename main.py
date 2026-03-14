@@ -21,7 +21,7 @@ import base64
 from config import (
     INPUT_CSV_COLUMN, INPUT_URL_FILTER,
     BATCH_SIZE, MAX_CONCURRENT, MAX_RETRIES,
-    OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE
+    OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE, PROCESSED_BATCH_DIR
 )
 from source.data_loader import load_csv
 
@@ -397,6 +397,68 @@ def push_batch_to_repo(batch_num, url_start, url_end, urls_data):
     commit_msg = f"Add batch-{batch_num} (URLs {url_start}-{url_end})"
     return push_file_to_repo(full_url, content, commit_msg)
 
+
+def process_and_push_batch(batch_num: int, batch_results_data: list):
+    batch_reports = []
+    batch_stats = {
+        'total_processed': len(batch_results_data),
+        'successful_urls': 0,
+        'failed_urls': 0,
+        'empty_pages': 0,
+        'pages_with_reports': 0,
+        'total_reports': 0,
+        'total_addresses': 0,
+        'total_domains': 0,
+        'errors_by_type': {},
+        'batch_number': batch_num,
+        'created_at': datetime.now().isoformat()
+    }
+
+    permanently_failed = []
+
+    for result in batch_results_data:
+        if result['success']:
+            batch_stats['successful_urls'] += 1
+            if result.get('empty'):
+                batch_stats['empty_pages'] += 1
+            else:
+                batch_stats['pages_with_reports'] += 1
+                batch_reports.extend(result.get('reports', []))
+        else:
+            batch_stats['failed_urls'] += 1
+            error_type = result.get('error_type', 'Unknown')
+            batch_stats['errors_by_type'][error_type] = batch_stats['errors_by_type'].get(error_type, 0) + 1
+            permanently_failed.append({
+                'url': result['url'],
+                'error': result.get('error', ''),
+                'error_type': error_type,
+                'retries': MAX_RETRIES,
+                'failed_at': datetime.now().isoformat()
+            })
+
+    batch_stats['total_reports']   = len(batch_reports)
+    batch_stats['total_addresses'] = sum(len(r.get('addresses', [])) for r in batch_reports)
+    batch_stats['total_domains']   = sum(len(r.get('domains', [])) for r in batch_reports)
+
+    processed_payload = {
+        "reports":            batch_reports,
+        "processed":          len(batch_results_data),
+        "failed":             [],
+        "permanently_failed": permanently_failed,
+        "total_urls":         len(batch_results_data),
+        "stats":              batch_stats,
+        "timestamp":          datetime.now().isoformat()
+    }
+
+    content    = json.dumps(processed_payload, indent=2)
+    full_url   = f"{PROCESSED_BATCH_DIR}processed_batch-{batch_num}.json"
+    commit_msg = f"Add processed_batch-{batch_num} ({len(batch_reports)} reports)"
+
+    success = push_file_to_repo(full_url, content, commit_msg)
+    if success:
+        print(f"✅ processed_batch-{batch_num}.json pushed ({len(batch_reports)} reports, {batch_stats['total_addresses']} addresses)")
+    return success
+                                
 # ============================================
 # MAIN SCRAPE LOOP
 # ============================================
@@ -479,6 +541,9 @@ async def scrape_all(all_urls):
 
             # Push batch to private repo
             push_batch_to_repo(batch_num, current_index, current_index + len(batch_urls), batch_results_data)
+
+            # Push processed batch — this batch only, checkpoint format
+            process_and_push_batch(batch_num, batch_results_data)
 
             # Update local progress.json — point to the NEXT unprocessed index
             next_index = current_index + len(batch_urls)
