@@ -1,9 +1,6 @@
 name: Run Script
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 jobs:
   run-script:
     runs-on: ubuntu-latest
@@ -32,4 +29,4 @@ jobs:
           MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
           BASE_DIR: ${{ secrets.BASE_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        # run: python main.py
+        run: python main.py
