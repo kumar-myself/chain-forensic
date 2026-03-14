@@ -25,3 +25,8 @@ PROGRESS_DIR = "https://api.github.com/repos/kumar-myself/chain-forensic/content
 TOKEN = os.environ.get("TOKEN")
 PROGRESS_FILE = f'progress.json'
 
+MONGO_USER       = os.environ.get("MONGO_USER")
+MONGO_PASSWORD   = os.environ.get("MONGO_PASSWORD")
+MONGO_HOST       = os.environ.get("MONGO_HOST")
+MONGO_DB         = os.environ.get("MONGO_DB")
+MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION")
