@@ -5,6 +5,7 @@
 # Batch files pushed to private GitHub repo
 # ============================================
 
+import subprocess
 import asyncio
 from playwright.async_api import async_playwright
 import json
@@ -68,7 +69,6 @@ def load_progress():
     return None
 
 def save_progress(batch_num: int, url_index: int, current_url: str):
-    """Save progress to local progress.json."""
     data = {
         "latest_batch_number": batch_num,
         "next_url_index": url_index,
@@ -78,6 +78,17 @@ def save_progress(batch_num: int, url_index: int, current_url: str):
     with open(PROGRESS_FILE, 'w') as f:
         json.dump(data, f, indent=2)
     print(f"💾 progress.json updated → batch={batch_num}, next_index={url_index}, url={current_url}")
+
+    # Commit and push to local repo (chain-forensic)
+    try:
+        subprocess.run(['git', 'config', '--global', 'user.name', 'GitHub Actions Bot'], check=True)
+        subprocess.run(['git', 'config', '--global', 'user.email', 'actions@github.com'], check=True)
+        subprocess.run(['git', 'add', PROGRESS_FILE], check=True)
+        subprocess.run(['git', 'commit', '-m', f'Update progress.json → batch={batch_num}, index={url_index}'], check=True)
+        subprocess.run(['git', 'push'], check=True)
+        print(f"✅ progress.json pushed to repo")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️  Git push failed: {e}")
 
 # ============================================
 # SCRAPER
