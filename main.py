@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # ============================================
-# CHAINABUSE SCRAPER FOR GITHUB ACTIONS
-# Saves data directly to repository - FULL REPORT DETAILS VERSION
+# CHAINABUSE SCRAPER - PRIVATE REPO OUTPUT
+# Progress tracked via local progress.json
+# Batch files pushed to private GitHub repo
 # ============================================
 
 import asyncio
@@ -13,53 +14,73 @@ import pandas as pd
 from datetime import datetime
 import random
 import os
+import requests
+import base64
 
 from config import (
-    OUTPUT_DATA_DIR, BATCH_DIR, PROGRESS_FILE,
     INPUT_CSV_COLUMN, INPUT_URL_FILTER,
-    BATCH_SIZE, MAX_CONCURRENT, MAX_RETRIES
+    BATCH_SIZE, MAX_CONCURRENT, MAX_RETRIES,
+    OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE
 )
-from processed.data_uploader import upload_json
-
-# Create directories
-os.makedirs(OUTPUT_DATA_DIR, exist_ok=True)
-os.makedirs(BATCH_DIR, exist_ok=True)
-print(f"✅ Output directory: {OUTPUT_DATA_DIR}")
-
+from data_loader import load_csv
 
 # ============================================
-# PROGRESS TRACKING
+# GITHUB PRIVATE REPO HELPERS
 # ============================================
 
-def save_progress(batch_num, url_index, url):
-    """Save current progress so we can resume from next batch"""
-    progress = {
-        'last_batch_num': batch_num,
-        'last_url_index': url_index,
-        'last_url': url,
-        'saved_at': datetime.now().isoformat()
+def get_github_headers():
+    return {
+        "Authorization": f"token {TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json"
     }
-    with open(PROGRESS_FILE, 'w') as f:
-        json.dump(progress, f, indent=2)
-    print(f"📌 Progress saved: batch-{batch_num}, URL index {url_index}")
 
+def push_file_to_repo(full_file_url: str, content: str, commit_message: str):
+    headers = get_github_headers()
+
+    sha = None
+    check = requests.get(full_file_url, headers=headers)
+    if check.status_code == 200:
+        sha = check.json().get("sha")
+
+    encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+    payload = {"message": commit_message, "content": encoded}
+    if sha:
+        payload["sha"] = sha
+
+    response = requests.put(full_file_url, headers=headers, json=payload)
+    if response.status_code in (200, 201):
+        print(f"✅ Pushed: {full_file_url}")
+        return True
+    else:
+        print(f"⚠️  Failed: {response.status_code} {response.text[:200]}")
+        return False
+
+# ============================================
+# PROGRESS FILE (LOCAL ONLY)
+# ============================================
 
 def load_progress():
-    """Load progress to resume from last saved batch"""
-    if not os.path.exists(PROGRESS_FILE):
-        return None
-    try:
+    """Load local progress.json. Returns None if not found."""
+    if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, 'r') as f:
-            progress = json.load(f)
-        print(f"📂 Resuming from batch-{progress['last_batch_num']}, URL index {progress['last_url_index']} ({progress['last_url']})")
-        return progress
-    except Exception as e:
-        print(f"⚠️  Could not load progress: {e}")
-        return None
+            return json.load(f)
+    return None
 
+def save_progress(batch_num: int, url_index: int, current_url: str):
+    """Save progress to local progress.json."""
+    data = {
+        "latest_batch_number": batch_num,
+        "next_url_index": url_index,
+        "last_url": current_url,
+        "last_updated": datetime.now().isoformat()
+    }
+    with open(PROGRESS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"💾 progress.json updated → batch={batch_num}, next_index={url_index}, url={current_url}")
 
 # ============================================
-# SCRAPING
+# SCRAPER
 # ============================================
 
 async def scrape_url(browser, url, semaphore, retry_count=0):
@@ -285,7 +306,6 @@ async def scrape_url(browser, url, semaphore, retry_count=0):
             except:
                 pass
 
-
 async def scrape_batch(urls, max_concurrent=3, retry_count=0):
     """Process batch of URLs with progress bar"""
     async with async_playwright() as p:
@@ -294,7 +314,6 @@ async def scrape_batch(urls, max_concurrent=3, retry_count=0):
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
         semaphore = asyncio.Semaphore(max_concurrent)
-
         tasks = [scrape_url(browser, url, semaphore, retry_count) for url in urls]
         results = []
 
@@ -306,14 +325,12 @@ async def scrape_batch(urls, max_concurrent=3, retry_count=0):
         await browser.close()
         return results
 
-
 # ============================================
-# BATCH SAVING
+# BATCH SAVE → PRIVATE REPO
 # ============================================
 
-def save_batch_file(batch_num, url_start, url_end, urls_data):
-    """Build batch data dict, save locally and upload to private repo"""
-
+def build_batch_payload(batch_num, url_start, url_end, urls_data):
+    """Build batch JSON payload — same format as before."""
     successful_urls = []
     empty_urls = []
     failed_urls = []
@@ -340,7 +357,7 @@ def save_batch_file(batch_num, url_start, url_end, urls_data):
                 'total_domains': sum(len(r.get('domains', [])) for r in data['reports'])
             })
 
-    batch_data = {
+    return {
         'batch_number': batch_num,
         'url_range': {
             'start': url_start,
@@ -362,207 +379,143 @@ def save_batch_file(batch_num, url_start, url_end, urls_data):
         'failed_urls': failed_urls
     }
 
-    # Save locally
-    batch_file = f'{BATCH_DIR}batch-{batch_num}.json'
-    with open(batch_file, 'w') as f:
-        json.dump(batch_data, f, indent=2)
-
-    print(f"💾 Saved batch-{batch_num}.json (URLs {url_start}-{url_end}: ✅{len(successful_urls)} 📭{len(empty_urls)} ❌{len(failed_urls)})")
-
-    # Upload to private repo
-    upload_json(batch_num, batch_data)
-
-    return batch_data
-
+def push_batch_to_repo(batch_num, url_start, url_end, urls_data):
+    payload = build_batch_payload(batch_num, url_start, url_end, urls_data)
+    content = json.dumps(payload, indent=2)
+    full_url = f"{BATCH_DIR}batch-{batch_num}.json"  # already a full GitHub API URL
+    commit_msg = f"Add batch-{batch_num} (URLs {url_start}-{url_end})"
+    return push_file_to_repo(full_url, content, commit_msg)
 
 # ============================================
 # MAIN SCRAPE LOOP
 # ============================================
 
-async def scrape_all_github(all_urls):
-    """Scrape with batch saving. Resumes from last saved batch via progress.json"""
-
-    permanently_failed = []
+async def scrape_all(all_urls):
+    """
+    Main loop. Progress tracked via local progress.json.
+    Batch files pushed to private repo after each batch.
+    """
     start_index = 0
-    next_batch_num = 1
 
-    stats = {
-        'total_processed': 0,
-        'successful_urls': 0,
-        'failed_urls': 0,
-        'empty_pages': 0,
-        'pages_with_reports': 0,
-        'total_reports': 0,
-        'total_addresses': 0,
-        'total_domains': 0,
-        'start_time': datetime.now().isoformat(),
-        'last_update': datetime.now().isoformat()
-    }
-
-    # Resume from progress if available
+    # Resume from progress.json if it exists
     progress = load_progress()
     if progress:
-        start_index = progress['last_url_index']
-        next_batch_num = progress['last_batch_num'] + 1
-        print(f"✅ Resuming: skipping {start_index} URLs, starting at batch-{next_batch_num}")
+        start_index = progress.get("next_url_index", 0)
+        print(f"▶️  Resuming from index {start_index} (last batch: {progress.get('latest_batch_number')}, url: {progress.get('last_url')})")
+    else:
+        print("🆕 Starting fresh scrape")
 
     urls_to_process = all_urls[start_index:]
+    print(f"📋 URLs remaining: {len(urls_to_process)}")
 
-    try:
-        for i in range(0, len(urls_to_process), BATCH_SIZE):
-            batch_num = next_batch_num + (i // BATCH_SIZE)
-            batch_urls = urls_to_process[i:i + BATCH_SIZE]
-            current_index = start_index + i
+    for i in range(0, len(urls_to_process), BATCH_SIZE):
+        current_index = start_index + i
+        batch_urls = urls_to_process[i:i + BATCH_SIZE]
+        # Batch number is 1-based, derived from absolute position
+        batch_num = current_index // BATCH_SIZE + 1
 
-            print(f"\n{'='*70}")
-            print(f"📦 Batch {batch_num} | URLs index: {current_index} → {current_index + len(batch_urls) - 1}")
-            print(f"   First URL: {batch_urls[0]}")
-            print(f"{'='*70}")
+        print(f"\n{'='*70}")
+        print(f"📦 Batch {batch_num} | Absolute URLs: {current_index} → {current_index + len(batch_urls) - 1}")
+        print(f"{'='*70}")
 
-            batch_start_time = time.time()
-            batch_results_data = []
+        batch_start_time = time.time()
+        batch_results_data = []
 
-            try:
-                results = await scrape_batch(batch_urls, max_concurrent=MAX_CONCURRENT)
+        try:
+            results = await scrape_batch(batch_urls, max_concurrent=MAX_CONCURRENT)
 
-                batch_stats = {'successful': 0, 'failed': 0, 'empty': 0, 'reports': 0}
-                batch_failed = []
+            permanently_failed_in_batch = []
 
-                for result in results:
-                    stats['total_processed'] += 1
-                    batch_results_data.append(result)
+            for result in results:
+                batch_results_data.append(result)
 
-                    if result['success']:
-                        stats['successful_urls'] += 1
-                        batch_stats['successful'] += 1
+            # Retry failures
+            batch_failed = [r for r in batch_results_data if not r['success']]
+            if batch_failed:
+                print(f"\n🔄 Retrying {len(batch_failed)} failed URLs...")
+                for retry_attempt in range(1, MAX_RETRIES + 1):
+                    if not batch_failed:
+                        break
+                    await asyncio.sleep(5)
+                    retry_urls = [r['url'] for r in batch_failed]
+                    retry_results = await scrape_batch(retry_urls, max_concurrent=2, retry_count=retry_attempt)
+                    still_failed = []
 
-                        if result.get('empty', False):
-                            stats['empty_pages'] += 1
-                            batch_stats['empty'] += 1
+                    for result in retry_results:
+                        # Replace original result with retry result
+                        for idx, orig in enumerate(batch_results_data):
+                            if orig['url'] == result['url']:
+                                batch_results_data[idx] = result
+                                break
+                        if result['success']:
+                            print(f"  ✅ Recovered: {result['url']}")
                         else:
-                            stats['pages_with_reports'] += 1
-                            batch_stats['reports'] += len(result['reports'])
-                            stats['total_reports'] += len(result['reports'])
-                            stats['total_addresses'] += sum(len(r.get('addresses', [])) for r in result['reports'])
-                            stats['total_domains'] += sum(len(r.get('domains', [])) for r in result['reports'])
-                    else:
-                        stats['failed_urls'] += 1
-                        batch_stats['failed'] += 1
-                        batch_failed.append(result)
+                            still_failed.append(result)
 
-                stats['last_update'] = datetime.now().isoformat()
-                batch_time = time.time() - batch_start_time
-                print(f"\n📊 ✅{batch_stats['successful']} ❌{batch_stats['failed']} 📭{batch_stats['empty']} 📝{batch_stats['reports']} | ⚡{len(batch_urls)/batch_time:.1f} URL/s")
+                    batch_failed = still_failed
 
-                # Retry failed URLs
-                if batch_failed:
-                    print(f"\n🔄 Retrying {len(batch_failed)} failed URLs...")
-                    for retry_attempt in range(1, MAX_RETRIES + 1):
-                        if not batch_failed:
-                            break
-                        await asyncio.sleep(5)
-                        retry_urls = [r['url'] for r in batch_failed]
-                        retry_results = await scrape_batch(retry_urls, max_concurrent=2, retry_count=retry_attempt)
-                        still_failed = []
+                for failed_result in batch_failed:
+                    permanently_failed_in_batch.append(failed_result)
 
-                        for result in retry_results:
-                            for idx, orig in enumerate(batch_results_data):
-                                if orig['url'] == result['url']:
-                                    batch_results_data[idx] = result
-                                    break
+            # Stats summary
+            successful = [r for r in batch_results_data if r['success'] and not r.get('empty')]
+            empty = [r for r in batch_results_data if r['success'] and r.get('empty')]
+            failed = [r for r in batch_results_data if not r['success']]
+            total_reports = sum(len(r.get('reports', [])) for r in successful)
+            batch_time = time.time() - batch_start_time
 
-                            if result['success']:
-                                stats['total_reports'] += len(result['reports'])
-                                stats['total_addresses'] += sum(len(r.get('addresses', [])) for r in result['reports'])
-                                print(f"  ✅ Recovered: {result['url']}")
-                            else:
-                                still_failed.append(result)
+            print(f"\n📊 Batch {batch_num} → ✅{len(successful)} 📭{len(empty)} ❌{len(failed)} 📝{total_reports} | ⚡{len(batch_urls)/batch_time:.1f}/s")
 
-                        batch_failed = still_failed
+            # Push batch to private repo
+            push_batch_to_repo(batch_num, current_index, current_index + len(batch_urls), batch_results_data)
 
-                    for failed_result in batch_failed:
-                        permanently_failed.append({
-                            'url': failed_result['url'],
-                            'error': failed_result.get('error', ''),
-                            'error_type': failed_result.get('error_type', 'Unknown'),
-                            'retries': MAX_RETRIES,
-                            'failed_at': datetime.now().isoformat()
-                        })
+            # Update local progress.json — point to the NEXT unprocessed index
+            next_index = current_index + len(batch_urls)
+            last_url = batch_urls[-1] if batch_urls else ""
+            save_progress(batch_num, next_index, last_url)
 
-                # Save batch locally + upload to private repo
-                save_batch_file(
-                    batch_num,
-                    current_index,
-                    current_index + len(batch_urls),
-                    batch_results_data
-                )
+        except Exception as e:
+            print(f"\n❌ Batch {batch_num} error: {e}")
+            import traceback
+            traceback.print_exc()
+            # Save progress so we can resume from this batch
+            save_progress(batch_num - 1, current_index, batch_urls[0] if batch_urls else "")
+            raise
 
-                # Update progress AFTER batch is saved and uploaded
-                last_url_index = current_index + len(batch_urls)
-                save_progress(batch_num, last_url_index, batch_urls[-1])
+        await asyncio.sleep(2)
 
-            except Exception as e:
-                print(f"\n❌ Batch {batch_num} error: {e}")
-                # Progress not updated — next run will retry this batch
-                raise
-
-            await asyncio.sleep(2)
-
-    except KeyboardInterrupt:
-        print(f"\n⚠️  Interrupted! Progress saved up to last completed batch.")
-        raise
-
-    return permanently_failed, stats
-
+    print(f"\n🎉 All batches complete.")
 
 # ============================================
-# MAIN EXECUTION
+# MAIN
 # ============================================
 
 async def main():
-    from source.data_loader import load_csv
+    
+    if not TOKEN:
+        raise ValueError("TOKEN environment variable not set")
 
+    # Load URLs from private repo via data_loader
     df = load_csv()
     urls_list = df[INPUT_CSV_COLUMN].tolist()
-    urls_list = [url for url in urls_list if INPUT_URL_FILTER in url]
-
-    print(f"📋 Total URLs: {len(urls_list)}")
+    # urls_list = [url for url in urls_list if INPUT_URL_FILTER in url]  
+    print(f"📋 Total URLs after filter: {len(urls_list)}")
 
     start_time = time.time()
 
     try:
-        permanently_failed, stats = await scrape_all_github(all_urls=urls_list)
-
-        elapsed = time.time() - start_time
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        if permanently_failed:
-            failed_csv = f'{OUTPUT_DATA_DIR}permanently_failed_{timestamp}.csv'
-            pd.DataFrame(permanently_failed).to_csv(failed_csv, index=False)
-            print(f"⚠️  Permanently failed URLs saved: {failed_csv}")
-
-        stats['end_time'] = datetime.now().isoformat()
-        stats['total_elapsed_seconds'] = elapsed
-        stats['urls_per_hour'] = len(urls_list) / (elapsed / 3600)
-
-        stats_file = f'{OUTPUT_DATA_DIR}final_stats_{timestamp}.json'
-        with open(stats_file, 'w') as f:
-            json.dump(stats, f, indent=2)
-
-        print(f"\n{'='*70}")
-        print(f"✅ COMPLETE")
-        print(f"{'='*70}")
-        print(f"📝 Total Reports: {stats['total_reports']}")
-        print(f"🔗 Addresses: {stats['total_addresses']}")
-        print(f"✅ Successful URLs: {stats['successful_urls']} | ❌ Permanently failed: {len(permanently_failed)}")
-        print(f"⏱️  {elapsed/60:.2f} min | {stats['urls_per_hour']:.1f} URLs/hr")
-        print(f"🎉 Done!")
-
+        await scrape_all(urls_list)
+    except KeyboardInterrupt:
+        print("\n⚠️  Interrupted by user. progress.json saved, safe to resume.")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        elapsed = time.time() - start_time
+        print(f"\n⏱️  Total elapsed: {elapsed/60:.2f} min")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
