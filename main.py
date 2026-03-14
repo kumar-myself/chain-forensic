@@ -21,7 +21,7 @@ import base64
 from config import (
     INPUT_CSV_COLUMN, INPUT_URL_FILTER,
     BATCH_SIZE, MAX_CONCURRENT, MAX_RETRIES,
-    OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE, PROCESSED_BATCH_DIR
+    OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE, PROCESSED_BATCH_DIR, PROGRESS_DIR
 )
 from source.data_loader import load_csv
 
@@ -79,16 +79,9 @@ def save_progress(batch_num: int, url_index: int, current_url: str):
         json.dump(data, f, indent=2)
     print(f"💾 progress.json updated → batch={batch_num}, next_index={url_index}, url={current_url}")
 
-    # Commit and push to local repo (chain-forensic)
-    try:
-        subprocess.run(['git', 'config', '--global', 'user.name', 'GitHub Actions Bot'], check=True)
-        subprocess.run(['git', 'config', '--global', 'user.email', 'actions@github.com'], check=True)
-        subprocess.run(['git', 'add', PROGRESS_FILE], check=True)
-        subprocess.run(['git', 'commit', '-m', f'Update progress.json → batch={batch_num}, index={url_index}'], check=True)
-        subprocess.run(['git', 'push'], check=True)
-        print(f"✅ progress.json pushed to repo")
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️  Git push failed: {e}")
+    # Push to chain-forensic repo via GitHub API
+    full_url = f"{PROGRESS_DIR}{PROGRESS_FILE}"
+    push_file_to_repo(full_url, json.dumps(data, indent=2), f"Update progress.json → batch={batch_num}, index={url_index}")
 
 # ============================================
 # SCRAPER
