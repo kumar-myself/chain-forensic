@@ -20,6 +20,7 @@ SOURCE_FILE = f"{SOURCE_DIR}{INPUT_CSV}"
 OUTPUT_DIR  = f"{BASE_DIR}output/"
 BATCH_DIR   = f"{OUTPUT_DIR}url_batches/"
 PROCESSED_BATCH_DIR = f"{OUTPUT_DIR}processed/"
+PROGRESS_DIR = "https://api.github.com/repos/kumar-myself/chain-forensic/contents/"
 
 TOKEN = os.environ.get("TOKEN")
 PROGRESS_FILE = f'progress.json'
