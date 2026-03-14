@@ -27,4 +27,4 @@ jobs:
         env:
           BASE_DIR: ${{ secrets.BASE_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        # run: python main.py
+        run: python main.py
