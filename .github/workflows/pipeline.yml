@@ -1,15 +1,12 @@
 name: Run Script
-
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,7 +17,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pandas requests
+        run: |
+          pip install pandas requests playwright tqdm
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
 
       - name: Run script
         env:
