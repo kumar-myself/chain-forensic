@@ -32,4 +32,4 @@ jobs:
           MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
           BASE_DIR: ${{ secrets.BASE_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        run: python main.py
+        # run: python main.py
