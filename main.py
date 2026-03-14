@@ -22,7 +22,7 @@ from config import (
     BATCH_SIZE, MAX_CONCURRENT, MAX_RETRIES,
     OUTPUT_DIR, BATCH_DIR, TOKEN, PROGRESS_FILE
 )
-from data_loader import load_csv
+from input.data_loader import load_csv
 
 # ============================================
 # GITHUB PRIVATE REPO HELPERS
