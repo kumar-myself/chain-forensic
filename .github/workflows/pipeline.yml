@@ -30,8 +30,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install pandas requests playwright tqdm pymongo dnspython certifi orjson
+        run: pip install -r requirements.txt
 
       - name: Install Playwright browsers
         run: playwright install chromium --with-deps
