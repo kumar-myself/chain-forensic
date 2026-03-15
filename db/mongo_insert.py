@@ -58,8 +58,13 @@ def insert_reports(reports: list):
     batch = []
     for doc in reports:
         doc["hash"] = create_hash(doc)
+        
+        # Add category_tag at birth
+        if doc.get("category"):
+            doc["category_tag"] = doc["category"].split(":")[0].strip()
+        
         batch.append(doc)
-
+    
     try:
         col.insert_many(batch, ordered=False)
     except BulkWriteError as e:
