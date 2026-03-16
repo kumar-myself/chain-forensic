@@ -3,11 +3,11 @@ name: Run Script
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"   # safety net — restarts if chain breaks
+    - cron: "0 */6 * * *"
 
 concurrency:
   group: run-script-group
-  cancel-in-progress: false  # don't cancel running job, just skip the new trigger
+  cancel-in-progress: true
 
 jobs:
   run-script:
@@ -44,17 +44,27 @@ jobs:
           MONGO_COLLECTION: ${{ secrets.MONGO_COLLECTION }}
           BASE_DIR: ${{ secrets.BASE_DIR }}
           TOKEN: ${{ secrets.TOKEN }}
-        run: python main.py
+        run: |
+          python main.py
+          echo "completed" > .job_status
 
       - name: Trigger next run
-        if: always()
+        if: failure() || cancelled()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: "pipeline.yml",  // ← changed
-              ref: "main"                   // ← already correct
-            })
+            const fs = require('fs');
+            const completed = fs.existsSync('.job_status');
+            
+            if (!completed) {
+              console.log("Triggering next run...");
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "pipeline.yml",
+                ref: "main"
+              });
+            } else {
+              console.log("Skipping next run — job completed normally");
+            }
