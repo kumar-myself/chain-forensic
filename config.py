@@ -18,12 +18,18 @@ SOURCE_DIR  = f"{BASE_DIR}input/"
 SOURCE_FILE = f"{SOURCE_DIR}{INPUT_CSV}"
 
 OUTPUT_DIR  = f"{BASE_DIR}output/"
-BATCH_DIR   = f"{OUTPUT_DIR}url_batches/"
-PROCESSED_BATCH_DIR = f"{OUTPUT_DIR}processed/"
+BATCH_DIR   = f"{OUTPUT_DIR}url_batches-0/"
+PROCESSED_BATCH_DIR = f"{OUTPUT_DIR}processed-0/"
 PROGRESS_DIR = "https://api.github.com/repos/kumar-myself/chain-forensic/contents/"
 
+
+# OUTPUT_DIR  = f"{BASE_DIR}output/"
+# BATCH_DIR   = f"{OUTPUT_DIR}url_batches/"
+# PROCESSED_BATCH_DIR = f"{OUTPUT_DIR}processed/"
+# PROGRESS_DIR = "https://api.github.com/repos/kumar-myself/chain-forensic/contents/"
+
 TOKEN = os.environ.get("TOKEN")
-PROGRESS_FILE = f'progress.json'
+PROGRESS_FILE = f'progress-0.json'
 
 MONGO_USER       = os.environ.get("MONGO_USER")
 MONGO_PASSWORD   = os.environ.get("MONGO_PASSWORD")
