@@ -1,7 +1,7 @@
 import os
 
 # Input
-INPUT_CSV = 'sitemap-1.csv'
+INPUT_CSV = 'sitemap-0.csv'
 INPUT_CSV_COLUMN = 'loc'
 INPUT_URL_FILTER = '/address/'
 
